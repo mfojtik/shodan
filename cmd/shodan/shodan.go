@@ -8,14 +8,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/mfojtik/shodan/pkg/cmd/start"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-
-	"github.com/mfojtik/shodan/pkg/version"
+	"k8s.io/apiserver/pkg/server"
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
+	"k8s.io/klog/v2"
+
+	"github.com/mfojtik/shodan/pkg/cmd/start"
+	"github.com/mfojtik/shodan/pkg/version"
 )
 
 func main() {
@@ -35,6 +36,15 @@ func main() {
 }
 
 func NewShodanCommand(ctx context.Context) *cobra.Command {
+	// handle SIGTERM and SIGINT by cancelling the context.
+	shutdownCtx, cancel := context.WithCancel(ctx)
+	shutdownHandler := server.SetupSignalHandler()
+	go func() {
+		defer cancel()
+		<-shutdownHandler
+		klog.Infof("Received SIGTERM or SIGINT signal, shutting down controller.")
+	}()
+
 	cmd := &cobra.Command{
 		Use:   "shodan",
 		Short: "Artificial inteligence capable to perform engineering tasks",
@@ -50,7 +60,7 @@ func NewShodanCommand(ctx context.Context) *cobra.Command {
 		cmd.Version = v
 	}
 
-	cmd.AddCommand(start.NewStartCommand())
+	cmd.AddCommand(start.NewStartCommand(shutdownCtx))
 
 	return cmd
 }

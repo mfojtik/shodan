@@ -1,29 +1,35 @@
 package start
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"k8s.io/klog/v2"
+
+	"github.com/mfojtik/shodan/pkg/config"
+	"github.com/mfojtik/shodan/pkg/controllers/notification"
 )
 
 // startOptions holds values to drive the start command.
 type startOptions struct {
+	config.CommonOptions
 }
 
 // NewStartCommand creates a render command.
-func NewStartCommand() *cobra.Command {
+func NewStartCommand(ctx context.Context) *cobra.Command {
 	startOpts := startOptions{}
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "The bot will start listening to GitHub notifications and take actions",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := startOpts.Validate(); err != nil {
-				klog.Fatal(err)
-			}
 			if err := startOpts.Complete(); err != nil {
 				klog.Fatal(err)
 			}
-			if err := startOpts.Run(); err != nil {
+			if err := startOpts.Validate(); err != nil {
+				klog.Fatal(err)
+			}
+			if err := startOpts.Run(ctx); err != nil {
 				klog.Fatal(err)
 			}
 		},
@@ -35,17 +41,26 @@ func NewStartCommand() *cobra.Command {
 }
 
 func (r *startOptions) AddFlags(fs *pflag.FlagSet) {
-	//fs.StringVar(&r.lockHostPath, "manifest-lock-host-path", r.lockHostPath, "A host path mounted into the apiserver pods to hold lock.")
+	config.AddConfigFlags(fs)
 }
 
 func (r *startOptions) Validate() error {
+	if err := r.ValidateCommonOptions(); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (r *startOptions) Complete() error {
+	r.CompleteCommonOptions()
 	return nil
 }
 
-func (r *startOptions) Run() error {
+func (r *startOptions) Run(ctx context.Context) error {
+	notificationController := notification.NewController(r.Recorder)
+
+	go notificationController.Run(ctx, 1)
+
+	<-ctx.Done()
 	return nil
 }

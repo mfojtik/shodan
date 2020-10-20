@@ -1,0 +1,8 @@
+FROM quay.io/mfojtik/shodan:builder
+WORKDIR /go/src/github.com/mfojtik/shodan
+COPY . .
+ENV GO_PACKAGE github.com/mfojtik/shodan
+RUN make build --warn-undefined-variables
+
+FROM quay.io/mfojtik/shodan:base
+COPY --from=builder /go/src/github.com/mfojtik/shodan/shodan /usr/bin/
