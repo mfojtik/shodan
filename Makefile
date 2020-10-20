@@ -15,7 +15,5 @@ build-image:
 build-base:
 	podman build --squash -f Dockerfile.base -t quay.io/mfojtik/shodan:base
 
-
-push-images:
-	podman push quay.io/mfojtik/shodan:base && \
+push-image:
 	podman push quay.io/mfojtik/shodan:v0.1

@@ -5,24 +5,24 @@ import (
 	"os"
 
 	"github.com/openshift/library-go/pkg/operator/events"
-
-	"github.com/spf13/pflag"
 )
 
 var globalConfig = &CommonOptions{}
 
-func AddConfigFlags(fs *pflag.FlagSet) {
-	fs.StringVar(&globalConfig.GithubAccessToken, "github-access-token", "", "Github Access Token")
-}
-
 type CommonOptions struct {
-	Recorder          events.Recorder
-	GithubAccessToken string
+	Recorder events.Recorder
+	Storage  Storage
+
+	githubAccessToken string
+	boltPath          string
 }
 
 func (o *CommonOptions) ValidateCommonOptions() error {
-	if len(o.GithubAccessToken) == 0 {
+	if len(globalConfig.githubAccessToken) == 0 {
 		return fmt.Errorf("provide Github Access Token (either by --github-access-token or GITHUB_TOKEN env var)")
+	}
+	if len(globalConfig.boltPath) == 0 {
+		return fmt.Errorf("boltdb path must be specified using --boltdb-path")
 	}
 	return nil
 }
@@ -30,9 +30,13 @@ func (o *CommonOptions) ValidateCommonOptions() error {
 func (o *CommonOptions) CompleteCommonOptions() {
 	o.Recorder = events.NewLoggingEventRecorder("shodan")
 
-	if len(globalConfig.GithubAccessToken) == 0 {
-		o.GithubAccessToken = os.Getenv("GITHUB_TOKEN")
+	if len(globalConfig.githubAccessToken) == 0 {
+		o.githubAccessToken = os.Getenv("GITHUB_TOKEN")
 	} else {
-		o.GithubAccessToken = globalConfig.GithubAccessToken
+		o.githubAccessToken = globalConfig.githubAccessToken
+	}
+
+	if err := o.initializeBoltDB(globalConfig.boltPath); err != nil {
+		panic(err)
 	}
 }

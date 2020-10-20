@@ -24,13 +24,13 @@ func NewStartCommand(ctx context.Context) *cobra.Command {
 		Short: "The bot will start listening to GitHub notifications and take actions",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := startOpts.Complete(); err != nil {
-				klog.Fatal(err)
+				klog.Exit(err)
 			}
 			if err := startOpts.Validate(); err != nil {
-				klog.Fatal(err)
+				klog.Exit(err)
 			}
 			if err := startOpts.Run(ctx); err != nil {
-				klog.Fatal(err)
+				klog.Exit(err)
 			}
 		},
 	}
@@ -41,7 +41,8 @@ func NewStartCommand(ctx context.Context) *cobra.Command {
 }
 
 func (r *startOptions) AddFlags(fs *pflag.FlagSet) {
-	config.AddConfigFlags(fs)
+	config.AddGithubFlags(fs)
+	config.AddBoltFlags(fs)
 }
 
 func (r *startOptions) Validate() error {
@@ -57,7 +58,7 @@ func (r *startOptions) Complete() error {
 }
 
 func (r *startOptions) Run(ctx context.Context) error {
-	notificationController := notification.NewController(r.Recorder)
+	notificationController := notification.NewController(r.CommonOptions, r.Recorder)
 
 	go notificationController.Run(ctx, 1)
 
