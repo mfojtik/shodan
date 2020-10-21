@@ -9,6 +9,7 @@ import (
 	"time"
 
 	v1 "github.com/mfojtik/shodan/pkg/api/job/v1"
+	"github.com/mfojtik/shodan/pkg/storage"
 
 	"github.com/google/go-github/github"
 
@@ -24,6 +25,8 @@ type controller struct {
 	options config.CommonOptions
 }
 
+// NewController returns a instance of notification controller. This controller watches for Github mentions and for each new mention
+// create a Job object in storage that other controller can consume.
 func NewController(options config.CommonOptions, recorder events.Recorder) factory.Controller {
 	c := &controller{
 		options: options,
@@ -32,39 +35,50 @@ func NewController(options config.CommonOptions, recorder events.Recorder) facto
 }
 
 func (c *controller) sync(ctx context.Context, factoryCtx factory.SyncContext) error {
-	klog.Info("Syncing notifications ...")
 	client := c.options.NewGithubClient(ctx)
 
+	lastSeenNotification, numJobs, err := storage.GetJobsStats(c.options.Storage)
+	if err != nil {
+		return err
+	}
+
+	klog.Infof("Checking Github notifications since %s (%d active jobs) ...", lastSeenNotification, numJobs)
 	notifications, _, err := client.Activity.ListNotifications(ctx, &github.NotificationListOptions{
 		All:           false,
 		Participating: true,
-		//Since:         time.Time{},
-		//Before:        time.Time{},
+		Since:         lastSeenNotification,
 	})
 	if err != nil {
 		return err
 	}
-	for _, n := range notifications {
+
+	for i := range notifications {
 		// only github mention notifications
-		if n.GetReason() != "mention" {
+		if notifications[i].GetReason() != "mention" {
 			continue
 		}
 		// only notifications we have not marked as seen before
-		if !n.GetUnread() {
+		if !notifications[i].GetUnread() {
 			continue
 		}
 
-		// parse the metadata from github notification subject (source repo, issue, comment ID, etc.)
-		notification, err := c.getNotificationFromSubject(ctx, client, n.GetSubject())
+		// parse the metadata from github n subject (source repo, issue, comment ID, etc.)
+		n, err := c.getNotificationFromSubject(ctx, client, notifications[i].GetSubject())
 		if err != nil {
 			return err
 		}
 
+		// we need to store when the notification was created so we can list only new next time
+		n.updatedAt = notifications[i].GetUpdatedAt()
+
+		klog.Infof("Processing Github notification %q", n.toJobName())
+
 		// construct a job we store in a config map
 		// the config map name is a key that include owner-repo-issueID-commentID
 		job := v1.Job{
-			Type:   determineJobType(notification.message),
-			Params: parseParameters(notification.message),
+			Name:   n.toJobName(),
+			Type:   determineJobType(n.message),
+			Params: parseParameters(n.message),
 			Status: v1.JobStatus{
 				State: v1.PendingJobState,
 			},
@@ -78,13 +92,9 @@ func (c *controller) sync(ctx context.Context, factoryCtx factory.SyncContext) e
 			continue
 		}
 
-		list, _ := c.options.Storage.List("")
-		klog.Infof("list: %#v", list)
-
-		res, err := c.options.Storage.Get(notification.toConfigMapName())
-		klog.Infof("get: %s", string(res))
+		res, err := c.options.Storage.Get(n.toJobName())
 		if err == nil {
-			// we already track this notification
+			klog.Infof("Job %q already exists: %s", n.toJobName(), string(res))
 			continue
 		}
 		if err != config.StorageNotFoundErr {
@@ -97,8 +107,8 @@ func (c *controller) sync(ctx context.Context, factoryCtx factory.SyncContext) e
 			return err
 		}
 
-		klog.Infof("store: %s", string(jobJSON))
-		if err := c.options.Storage.Set(notification.toConfigMapName(), jobJSON); err != nil {
+		klog.Infof("Job %q created: %s", n.toJobName(), string(jobJSON))
+		if err := c.options.Storage.Set(n.toJobName(), jobJSON); err != nil {
 			return err
 		}
 	}
@@ -111,10 +121,11 @@ type notification struct {
 	issueID        string
 	commentID      string
 	message        string
+	updatedAt      time.Time
 }
 
-func (n notification) toConfigMapName() string {
-	return fmt.Sprintf("%s-%s-%s-%s", n.ownerName, n.repositoryName, n.issueID, n.commentID)
+func (n notification) toJobName() string {
+	return fmt.Sprintf("%s-%s-%s-%s-%d", n.ownerName, n.repositoryName, n.issueID, n.commentID, n.updatedAt.Unix())
 }
 
 func (c *controller) getNotificationFromSubject(ctx context.Context, ghClient *github.Client, s *github.NotificationSubject) (*notification, error) {

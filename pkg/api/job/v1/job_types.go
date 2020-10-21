@@ -7,6 +7,9 @@ var (
 )
 
 type Job struct {
+	Name string `json:"name"`
+
+	// Type of the job.
 	Type JobType `json:"type"`
 
 	Params []string  `json:"params"`

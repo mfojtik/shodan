@@ -8,12 +8,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-type Storage interface {
-	Get(string) ([]byte, error)
-	List(string) ([]string, error)
-	Set(string, []byte) error
-}
-
 var StorageNotFoundErr = fmt.Errorf("key not found")
 
 func AddBoltFlags(fs *pflag.FlagSet) {
@@ -33,6 +27,12 @@ func (o *CommonOptions) initializeBoltDB(path string) error {
 
 type boltStorage struct {
 	db *bolt.DB
+}
+
+func (s *boltStorage) Delete(name string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		return tx.DeleteBucket([]byte(name))
+	})
 }
 
 func (s *boltStorage) Get(name string) ([]byte, error) {
