@@ -31,7 +31,7 @@ func NewController(options config.CommonOptions, recorder events.Recorder) facto
 	c := &controller{
 		options: options,
 	}
-	return factory.New().ResyncEvery(30*time.Second).WithSync(c.sync).ToController("NotificationController", recorder)
+	return factory.New().ResyncEvery(30*time.Second).WithSync(c.sync).WithInformers(c.options.Informers()...).ToController("NotificationController", recorder)
 }
 
 func (c *controller) sync(ctx context.Context, factoryCtx factory.SyncContext) error {

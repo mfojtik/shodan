@@ -13,6 +13,7 @@ require (
 	golang.org/x/oauth2 v0.0.0-20191202225959-858c2ad4c8b6
 	k8s.io/apimachinery v0.19.2
 	k8s.io/apiserver v0.19.2
+	k8s.io/client-go v0.19.2
 	k8s.io/component-base v0.19.2
 	k8s.io/klog/v2 v2.3.0
 )

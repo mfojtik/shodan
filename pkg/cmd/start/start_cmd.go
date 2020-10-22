@@ -3,6 +3,8 @@ package start
 import (
 	"context"
 
+	"github.com/mfojtik/shodan/pkg/controllers/bump"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"k8s.io/klog/v2"
@@ -21,7 +23,7 @@ func NewStartCommand(ctx context.Context) *cobra.Command {
 	startOpts := startOptions{}
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "The bot will start listening to GitHub notifications and take actions",
+		Short: "Shodan will start listening to GitHub notifications",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := startOpts.Complete(); err != nil {
 				klog.Exit(err)
@@ -59,8 +61,10 @@ func (r *startOptions) Complete() error {
 
 func (r *startOptions) Run(ctx context.Context) error {
 	notificationController := notification.NewController(r.CommonOptions, r.Recorder)
+	bumpController := bump.NewController(r.CommonOptions, r.Recorder)
 
 	go notificationController.Run(ctx, 1)
+	go bumpController.Run(ctx, 1)
 
 	<-ctx.Done()
 	return nil

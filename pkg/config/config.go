@@ -4,17 +4,27 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/library-go/pkg/controller/factory"
+
+	"github.com/mfojtik/shodan/pkg/storage/informers"
+
+	"github.com/mfojtik/shodan/pkg/storage/informers/jobs"
+
 	"github.com/openshift/library-go/pkg/operator/events"
 )
 
 var globalConfig = &CommonOptions{}
 
+// CommonOptions are common for every controller shodan runs.
+// That include interface to Github API and also interface to persistence layer (storage).
 type CommonOptions struct {
 	Recorder events.Recorder
 	Storage  Storage
 
 	githubAccessToken string
 	boltPath          string
+
+	storageInformers []informers.StorageInformer
 }
 
 func (o *CommonOptions) ValidateCommonOptions() error {
@@ -27,6 +37,17 @@ func (o *CommonOptions) ValidateCommonOptions() error {
 	return nil
 }
 
+// Informers return a list of factory informers that can be consumed by controllers.
+// This provides a faster way to reconcile controllers when the persisted data change.
+func (o *CommonOptions) Informers() []factory.Informer {
+	ret := []factory.Informer{}
+	for i := range o.storageInformers {
+		ret = append(ret, o.storageInformers[i].(factory.Informer))
+	}
+	return ret
+}
+
+// CompleteCommonOptions will finalize the common options.
 func (o *CommonOptions) CompleteCommonOptions() {
 	o.Recorder = events.NewLoggingEventRecorder("shodan")
 
@@ -36,7 +57,10 @@ func (o *CommonOptions) CompleteCommonOptions() {
 		o.githubAccessToken = globalConfig.githubAccessToken
 	}
 
-	if err := o.initializeBoltDB(globalConfig.boltPath); err != nil {
+	o.storageInformers = []informers.StorageInformer{
+		jobs.New(),
+	}
+	if err := o.initializeBoltDB(globalConfig.boltPath, o.storageInformers...); err != nil {
 		panic(err)
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"github.com/mfojtik/shodan/pkg/config"
 )
 
+// GetJobsStats return the time of the last seen job and the number of all jobs in the storage.
+// The last seen job can be used to limit the amount of notifications we receive from GH API.
 func GetJobsStats(s config.Storage) (time.Time, int, error) {
 	jobs, err := s.List("")
 	if err != nil {
@@ -37,19 +39,32 @@ func GetJobsStats(s config.Storage) (time.Time, int, error) {
 	return time.Unix(lastTimestamp, 0), len(jobs), nil
 }
 
-func PendingBumpJobs(s config.Storage) ([]v1.Job, error) {
-	return FilterJobs(s, func(job v1.Job) bool {
-		return job.Type == v1.BumpJobType && job.Status.State == v1.PendingJobState
-	})
+// GetPendingBumpJobs return list of all jobs that are pending execution and are of type "bump".
+func GetPendingBumpJobs(s config.Storage) ([]v1.Job, error) {
+	return FilterJobs(s, FilterByState(v1.PendingJobState), FilterByType(v1.BumpJobType))
 }
 
-func PendingJobs(s config.Storage) ([]v1.Job, error) {
-	return FilterJobs(s, func(job v1.Job) bool {
-		return job.Status.State == v1.PendingJobState
-	})
+// GetPendingJobs return list of all pending jobs.
+func GetPendingJobs(s config.Storage) ([]v1.Job, error) {
+	return FilterJobs(s, FilterByState(v1.PendingJobState))
 }
 
-func FilterJobs(s config.Storage, fn func(job v1.Job) bool) ([]v1.Job, error) {
+type FilterFunc func(v1.Job) bool
+
+func FilterByState(s v1.JobState) FilterFunc {
+	return func(job v1.Job) bool {
+		return job.Status.State == s
+	}
+}
+
+func FilterByType(s v1.JobType) FilterFunc {
+	return func(job v1.Job) bool {
+		return job.Type == s
+	}
+}
+
+// FilterJobs is used to map/reduce on list of all jobs.
+func FilterJobs(s config.Storage, filters ...FilterFunc) ([]v1.Job, error) {
 	jobs, err := s.List("")
 	if err != nil {
 		return nil, err
@@ -64,7 +79,13 @@ func FilterJobs(s config.Storage, fn func(job v1.Job) bool) ([]v1.Job, error) {
 		if err := json.Unmarshal(jobBytes, &job); err != nil {
 			return nil, err
 		}
-		if !fn(job) {
+		hasMatch := true
+		for _, fn := range filters {
+			if !fn(job) {
+				hasMatch = false
+			}
+		}
+		if !hasMatch {
 			continue
 		}
 		result = append(result, job)
