@@ -15,5 +15,8 @@ build-image:
 build-base:
 	podman build --squash -f Dockerfile.base -t quay.io/mfojtik/shodan:base
 
+build-bumpdeps:
+	podman build --squash -f images/bumpdeps/Dockerfile -t quay.io/mfojtik/shodan:bumpdeps
+
 push-image:
 	podman push quay.io/mfojtik/shodan:v0.1
