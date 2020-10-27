@@ -18,3 +18,7 @@ func (o *CommonOptions) NewGithubClient(ctx context.Context) *github.Client {
 func AddGithubFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&globalConfig.githubAccessToken, "github-access-token", "", "Github Access Token")
 }
+
+func AddKubeConfigFlags(fs *pflag.FlagSet) {
+	fs.StringVar(&globalConfig.kubeconfigPath, "kubeconfig", "", "Path to kubeconfig file (optional)")
+}

@@ -42,18 +42,16 @@ func (c *controller) sync(ctx context.Context, context factory.SyncContext) erro
 	jobsToUpdate := []v1.Job{}
 
 	for _, j := range jobs {
-		meta := storage.GetJobMeta(j.Name)
-
 		if j.Status.State == v1.FinishedJobState {
 			continue
 		}
 
-		if len(j.Params) == 0 {
-			jobsToUpdate = append(jobsToUpdate, setJobInvalid(j, fmt.Sprintf("Invalid job parameters %#v, expected exactly one repository name", j.Params)))
+		if len(j.Spec.Params) == 0 {
+			jobsToUpdate = append(jobsToUpdate, setJobInvalid(j, fmt.Sprintf("Invalid job parameters %#v, expected exactly one repository name", j.Spec.Params)))
 			continue
 		}
 
-		merged, baseBranch, err := c.getPullRequestStatus(ctx, meta.Owner, meta.Repository, meta.IssueID)
+		merged, baseBranch, err := c.getPullRequestStatus(ctx, j.Spec.Owner, j.Spec.Repository, j.Spec.IssueID)
 		if err != nil {
 			return err
 		}
@@ -62,7 +60,7 @@ func (c *controller) sync(ctx context.Context, context factory.SyncContext) erro
 		if needBaseBranch, job := setJobBaseBranch(j, baseBranch); merged && needBaseBranch {
 			jobsToUpdate = append(jobsToUpdate, job)
 		} else {
-			klog.Infof("Waiting for %s/%s#%s to merge before bumping %s#%s ...", meta.Owner, meta.Repository, meta.IssueID, j.Params[0], job.Status.BaseBranch)
+			klog.Infof("Waiting for %s/%s#%s to merge before bumping %s#%s ...", j.Spec.Owner, j.Spec.Repository, j.Spec.IssueID, j.Spec.Params[0], job.Status.BaseBranch)
 		}
 	}
 

@@ -2,14 +2,22 @@ package v1
 
 type JobType string
 
-var (
-	BumpJobType JobType = "bump"
-)
-
 type Job struct {
 	// Name is the name of the job.
 	Name string `json:"name"`
 
+	Spec JobSpec
+
+	// Status contain details about the current state of the job.
+	// This can be modified by any controller.
+	Status JobStatus `json:"status"`
+}
+
+var (
+	BumpJobType JobType = "bump"
+)
+
+type JobSpec struct {
 	// Type of the job.
 	// This is filled by notification controller.
 	Type JobType `json:"type"`
@@ -19,9 +27,11 @@ type Job struct {
 	// This is filled by notification controller.
 	Params []string `json:"params"`
 
-	// Status contain details about the current state of the job.
-	// This can be modified by any controller.
-	Status JobStatus `json:"status"`
+	// Metadata
+	Repository string
+	Owner      string
+	IssueID    string
+	CommentID  string
 }
 
 // JobState represents the state the jobs current are.

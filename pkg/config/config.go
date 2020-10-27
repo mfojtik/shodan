@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"os"
 
+	client "k8s.io/client-go/kubernetes"
+
 	"github.com/openshift/library-go/pkg/controller/factory"
 
 	"github.com/mfojtik/shodan/pkg/storage/informers"
 
 	"github.com/mfojtik/shodan/pkg/storage/informers/jobs"
 
+	clientconfig "github.com/openshift/library-go/pkg/config/client"
 	"github.com/openshift/library-go/pkg/operator/events"
 )
 
@@ -19,8 +22,10 @@ var globalConfig = &CommonOptions{}
 // That include interface to Github API and also interface to persistence layer (storage).
 type CommonOptions struct {
 	Recorder events.Recorder
+	Client   client.Interface
 	Storage  Storage
 
+	kubeconfigPath    string
 	githubAccessToken string
 	boltPath          string
 
@@ -48,7 +53,7 @@ func (o *CommonOptions) Informers() []factory.Informer {
 }
 
 // CompleteCommonOptions will finalize the common options.
-func (o *CommonOptions) CompleteCommonOptions() {
+func (o *CommonOptions) CompleteCommonOptions() error {
 	o.Recorder = events.NewLoggingEventRecorder("shodan")
 
 	if len(globalConfig.githubAccessToken) == 0 {
@@ -61,6 +66,17 @@ func (o *CommonOptions) CompleteCommonOptions() {
 		jobs.New(),
 	}
 	if err := o.initializeBoltDB(globalConfig.boltPath, o.storageInformers...); err != nil {
-		panic(err)
+		return err
 	}
+
+	restConfig, err := clientconfig.GetKubeConfigOrInClusterConfig(globalConfig.kubeconfigPath, &clientconfig.ClientConnectionOverrides{})
+	if err != nil {
+		return fmt.Errorf("unable to configure kubernetes client, please provide kubeconfig file via --kubeconfig flag")
+	}
+
+	o.Client, err = client.NewForConfig(restConfig)
+	if err != nil {
+		return err
+	}
+	return nil
 }

@@ -108,6 +108,7 @@ github.com/openshift/build-machinery-go/make/targets/openshift/operator
 github.com/openshift/build-machinery-go/scripts
 # github.com/openshift/library-go v0.0.0-20201020083322-646ad9742a1e
 ## explicit
+github.com/openshift/library-go/pkg/config/client
 github.com/openshift/library-go/pkg/controller/factory
 github.com/openshift/library-go/pkg/operator/events
 github.com/openshift/library-go/pkg/operator/v1helpers

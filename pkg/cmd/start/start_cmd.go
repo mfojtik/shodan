@@ -3,6 +3,8 @@ package start
 import (
 	"context"
 
+	"github.com/mfojtik/shodan/pkg/controllers/bumppod"
+
 	"github.com/mfojtik/shodan/pkg/controllers/bump"
 
 	"github.com/spf13/cobra"
@@ -45,6 +47,7 @@ func NewStartCommand(ctx context.Context) *cobra.Command {
 func (r *startOptions) AddFlags(fs *pflag.FlagSet) {
 	config.AddGithubFlags(fs)
 	config.AddBoltFlags(fs)
+	config.AddKubeConfigFlags(fs)
 }
 
 func (r *startOptions) Validate() error {
@@ -55,16 +58,17 @@ func (r *startOptions) Validate() error {
 }
 
 func (r *startOptions) Complete() error {
-	r.CompleteCommonOptions()
-	return nil
+	return r.CompleteCommonOptions()
 }
 
 func (r *startOptions) Run(ctx context.Context) error {
 	notificationController := notification.NewController(r.CommonOptions, r.Recorder)
 	bumpController := bump.NewController(r.CommonOptions, r.Recorder)
+	bumpPodController := bumppod.NewController(r.CommonOptions, r.Recorder)
 
 	go notificationController.Run(ctx, 1)
 	go bumpController.Run(ctx, 1)
+	go bumpPodController.Run(ctx, 1)
 
 	<-ctx.Done()
 	return nil

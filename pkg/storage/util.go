@@ -59,8 +59,20 @@ func FilterByState(s v1.JobState) FilterFunc {
 
 func FilterByType(s v1.JobType) FilterFunc {
 	return func(job v1.Job) bool {
-		return job.Type == s
+		return job.Spec.Type == s
 	}
+}
+
+func GetJobByName(s config.Storage, name string) (*v1.Job, error) {
+	jobBytes, err := s.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	var job v1.Job
+	if err := json.Unmarshal(jobBytes, &job); err != nil {
+		return nil, err
+	}
+	return &job, nil
 }
 
 // FilterJobs is used to map/reduce on list of all jobs.

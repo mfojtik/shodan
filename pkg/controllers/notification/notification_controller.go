@@ -76,9 +76,15 @@ func (c *controller) sync(ctx context.Context, factoryCtx factory.SyncContext) e
 		// construct a job we store in a config map
 		// the config map name is a key that include owner-repo-issueID-commentID
 		job := v1.Job{
-			Name:   n.toJobName(),
-			Type:   determineJobType(n.message),
-			Params: parseParameters(n.message),
+			Name: n.toJobName(),
+			Spec: v1.JobSpec{
+				Type:       determineJobType(n.message),
+				Params:     parseParameters(n.message),
+				Repository: n.repositoryName,
+				Owner:      n.ownerName,
+				IssueID:    n.issueID,
+				CommentID:  n.commentID,
+			},
 			Status: v1.JobStatus{
 				State: v1.PendingJobState,
 			},
@@ -86,7 +92,7 @@ func (c *controller) sync(ctx context.Context, factoryCtx factory.SyncContext) e
 
 		// if we get unrecognized command, mark the job as finished, so the finished jobs controller can report
 		// failure in a comment.
-		if len(job.Type) == 0 {
+		if len(job.Spec.Type) == 0 {
 			job.Status.State = v1.FinishedJobState
 			job.Status.Message = fmt.Sprintf("Sorry human, I don't recognize this command.")
 			continue
