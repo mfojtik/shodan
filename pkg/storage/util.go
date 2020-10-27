@@ -22,11 +22,11 @@ func GetJobsStats(s config.Storage) (time.Time, int, error) {
 	lastTimestamp := int64(0)
 	for _, name := range jobs {
 		parts := strings.Split(name, "-")
-		if len(parts) != 5 {
+		if len(parts) <= 5 {
 			klog.Warningf("invalid storage key found: %q", name)
 			continue
 		}
-		t, _ := strconv.Atoi(parts[4])
+		t, _ := strconv.Atoi(parts[len(parts)-1])
 		timestamp := int64(t)
 		if lastTimestamp == 0 {
 			lastTimestamp = timestamp

@@ -27,11 +27,11 @@ type JobSpec struct {
 	// This is filled by notification controller.
 	Params []string `json:"params"`
 
-	// Metadata
-	Repository string
-	Owner      string
-	IssueID    string
-	CommentID  string
+	// These metadata are set on job creation.
+	Repository string `json:"repository"`
+	Owner      string `json:"owner"`
+	IssueID    string `json:"issue_id"`
+	CommentID  string `json:"comment_id"`
 }
 
 // JobState represents the state the jobs current are.

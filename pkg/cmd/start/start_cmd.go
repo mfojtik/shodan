@@ -3,6 +3,8 @@ package start
 import (
 	"context"
 
+	"github.com/mfojtik/shodan/pkg/controllers/bumppodstate"
+
 	"github.com/mfojtik/shodan/pkg/controllers/bumppod"
 
 	"github.com/mfojtik/shodan/pkg/controllers/bump"
@@ -65,10 +67,12 @@ func (r *startOptions) Run(ctx context.Context) error {
 	notificationController := notification.NewController(r.CommonOptions, r.Recorder)
 	bumpController := bump.NewController(r.CommonOptions, r.Recorder)
 	bumpPodController := bumppod.NewController(r.CommonOptions, r.Recorder)
+	bumpPodStateController := bumppodstate.NewController(r.CommonOptions, r.Recorder)
 
 	go notificationController.Run(ctx, 1)
 	go bumpController.Run(ctx, 1)
 	go bumpPodController.Run(ctx, 1)
+	go bumpPodStateController.Run(ctx, 1)
 
 	<-ctx.Done()
 	return nil

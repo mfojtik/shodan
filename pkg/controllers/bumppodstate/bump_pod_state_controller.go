@@ -2,6 +2,7 @@ package bumppodstate
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -42,20 +43,53 @@ func (c *controller) sync(ctx context.Context, context factory.SyncContext) erro
 	}
 
 	jobsToUpdate := []jobv1.Job{}
+	podsToDelete := []string{}
+
 	for _, j := range jobPods.Items {
 		if j.Status.Phase != v1.PodFailed && j.Status.Phase != v1.PodSucceeded {
 			continue
 		}
+
+		klog.Infof("Processing finished pod %q", j.Name)
 
 		job, err := storage.GetJobByName(c.options.Storage, strings.TrimPrefix(j.Name, "job-"))
 		if err != nil {
 			klog.Warningf("Unable to get job %q: %v", j.Name, err)
 			continue
 		}
+		podsToDelete = append(podsToDelete, j.Name)
 
-		terminationMessage := string(j.Status.ContainerStatuses[0].LastTerminationState.Terminated.Message)
-		if strings.Contains(terminationMessage, "")
+		if j.Status.Phase == v1.PodFailed {
+			if terminationMessage := j.Status.ContainerStatuses[0].State.Terminated.Message; len(terminationMessage) > 0 {
+				if strings.Contains(terminationMessage, "nothing to commit, working tree clean") {
+					job.Status.Message = "Human, it looks like the target repository is already up-to-date, after bumping there was no diff."
+					job.Status.State = jobv1.FinishedJobState
+					jobsToUpdate = append(jobsToUpdate, *job)
+					continue
+				}
+				job.Status.Message = fmt.Sprintf("Human, something terrible happened during bump:\n```\n%s\n```\n", terminationMessage)
+				continue
+			}
 
+			job.Status.Message = "Human, something really bad happened and the pod with bump failed."
+			job.Status.State = jobv1.FinishedJobState
+
+		}
+
+		if j.Status.Phase == v1.PodSucceeded {
+			job.Status.Message = fmt.Sprintf("Success! A bump pull request from me was open inside %s/%s repository.", job.Spec.Params[0])
+			job.Status.State = jobv1.FinishedJobState
+			jobsToUpdate = append(jobsToUpdate, *job)
+			continue
+		}
+
+	}
+
+	for _, podName := range podsToDelete {
+		klog.Infof("Deleting pod %q ...", podName)
+		if err := c.options.Client.CoreV1().Pods("shodan").Delete(ctx, podName, metav1.DeleteOptions{}); err != nil {
+			klog.Warningf("Unable to delete pod %s: %v", podName, err)
+		}
 	}
 
 	return util.UpdateJobs(c.options.Storage, jobsToUpdate)

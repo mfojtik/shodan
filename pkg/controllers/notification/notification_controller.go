@@ -71,6 +71,10 @@ func (c *controller) sync(ctx context.Context, factoryCtx factory.SyncContext) e
 		// we need to store when the notification was created so we can list only new next time
 		n.updatedAt = notifications[i].GetUpdatedAt()
 
+		if _, err := storage.GetJobByName(c.options.Storage, n.toJobName()); err != nil {
+			continue
+		}
+
 		klog.Infof("Processing Github notification %q", n.toJobName())
 
 		// construct a job we store in a config map
@@ -98,11 +102,6 @@ func (c *controller) sync(ctx context.Context, factoryCtx factory.SyncContext) e
 			continue
 		}
 
-		res, err := c.options.Storage.Get(n.toJobName())
-		if err == nil {
-			klog.Infof("Job %q already exists: %s", n.toJobName(), string(res))
-			continue
-		}
 		if err != config.StorageNotFoundErr {
 			// oops something bad happened in bolt
 			return err
