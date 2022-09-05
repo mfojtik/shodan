@@ -151,7 +151,7 @@ func main() {
 		fmt.Println("/healthz OK")
 		w.WriteHeader(http.StatusOK)
 	})
-	go log.Fatal(http.ListenAndServe(":80", nil))
+	go log.Fatal(http.ListenAndServe(":8080", nil))
 
 	client.Run()
 }
