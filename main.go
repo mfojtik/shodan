@@ -1,16 +1,18 @@
 package main
 
 import (
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"sync/atomic"
-
+	"context"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"sync/atomic"
+	"syscall"
 )
 
 func main() {
@@ -34,9 +36,20 @@ func main() {
 
 	enableDebugMode := false
 	if debugMode := os.Getenv("DEBUG_MODE"); len(debugMode) > 0 {
-		log.Printf("DEBUG_MODE is enabled")
 		enableDebugMode = true
 	}
+
+	// SIGINT handling
+	botContext, botShutdown := context.WithCancel(context.Background())
+	sigChannel := make(chan os.Signal, 1)
+	signal.Notify(sigChannel, os.Interrupt, syscall.SIGINT)
+	go func() {
+		select {
+		case <-sigChannel:
+			log.Println("Received SIGINT, shutting down ...")
+			botShutdown()
+		}
+	}()
 
 	api := slack.New(
 		botToken,
@@ -51,19 +64,28 @@ func main() {
 		socketmode.OptionLog(log.New(os.Stdout, "socketmode: ", log.Lshortfile|log.LstdFlags)),
 	)
 
-	var slackEventHandlerReady atomic.Value
+	var (
+		slackEventHandlerReady  atomic.Value
+		slackEventHandlerBooted atomic.Value
+	)
 	slackEventHandlerReady.Store(false)
+	slackEventHandlerBooted.Store(false)
 
 	go func() {
+		client.Debugf("Starting Slack event handler ...")
 		for evt := range client.Events {
 			switch evt.Type {
 			case socketmode.EventTypeConnecting:
-				log.Println("Connecting to Slack with Socket Mode...")
 			case socketmode.EventTypeConnectionError:
+				// when the connection failed, turn the healthz to red
+				slackEventHandlerReady.Store(false)
 				log.Println("Connection failed. Retrying later...")
 			case socketmode.EventTypeConnected:
+				// when we reconnect to slack, turn the healthz check back to ready
+				if booted := slackEventHandlerBooted.Load(); booted == true {
+					slackEventHandlerReady.Store(true)
+				}
 				log.Println("Connected to Slack with Socket Mode.")
-				slackEventHandlerReady.Store(true)
 			case socketmode.EventTypeEventsAPI:
 				eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 				if !ok {
@@ -135,6 +157,11 @@ func main() {
 					}}
 
 				client.Ack(*evt.Request, payload)
+			case socketmode.EventTypeHello:
+				// we only receive hello after boot and connection to slack
+				slackEventHandlerBooted.Store(true)
+				slackEventHandlerReady.Store(true)
+			case socketmode.EventTypeIncomingError:
 			default:
 				log.Printf("Unexpected event type received: %s\n", evt.Type)
 			}
@@ -150,7 +177,12 @@ func main() {
 		log.Println("/healthz NOT_READY")
 		w.WriteHeader(http.StatusServiceUnavailable)
 	})
-	go log.Fatal(http.ListenAndServe(":8080", nil))
 
-	client.Run()
+	// /healthz probe
+	go http.ListenAndServe(":8080", nil)
+
+	// slack handler
+	if err := client.RunContext(botContext); err != nil && err != context.Canceled {
+		log.Fatalf("Error running slack handler: %v", err)
+	}
 }
