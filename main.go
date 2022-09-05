@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 
@@ -145,6 +146,12 @@ func main() {
 			}
 		}
 	}()
+
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("/healthz OK")
+		w.WriteHeader(http.StatusOK)
+	})
+	go log.Fatal(http.ListenAndServe(":80", nil))
 
 	client.Run()
 }
