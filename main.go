@@ -34,6 +34,7 @@ func main() {
 
 	enableDebugMode := false
 	if debugMode := os.Getenv("DEBUG_MODE"); len(debugMode) > 0 {
+		log.Printf("DEBUG_MODE is enabled")
 		enableDebugMode = true
 	}
 
@@ -50,7 +51,8 @@ func main() {
 		socketmode.OptionLog(log.New(os.Stdout, "socketmode: ", log.Lshortfile|log.LstdFlags)),
 	)
 
-	var slackEventHandlerReady uint32
+	var slackEventHandlerReady atomic.Value
+	slackEventHandlerReady.Store(false)
 
 	go func() {
 		for evt := range client.Events {
@@ -61,7 +63,7 @@ func main() {
 				log.Println("Connection failed. Retrying later...")
 			case socketmode.EventTypeConnected:
 				log.Println("Connected to Slack with Socket Mode.")
-				atomic.AddUint32(&slackEventHandlerReady, 1)
+				slackEventHandlerReady.Store(true)
 			case socketmode.EventTypeEventsAPI:
 				eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 				if !ok {
@@ -140,7 +142,7 @@ func main() {
 	}()
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		if slackEventHandlerReady == 1 {
+		if ready := slackEventHandlerReady.Load(); ready == true {
 			log.Println("/healthz OK")
 			w.WriteHeader(http.StatusOK)
 			return
