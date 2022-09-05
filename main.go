@@ -35,14 +35,14 @@ func main() {
 
 	api := slack.New(
 		botToken,
-		slack.OptionDebug(true),
+		slack.OptionDebug(false),
 		slack.OptionLog(log.New(os.Stdout, "api: ", log.Lshortfile|log.LstdFlags)),
 		slack.OptionAppLevelToken(appToken),
 	)
 
 	client := socketmode.New(
 		api,
-		socketmode.OptionDebug(true),
+		socketmode.OptionDebug(false),
 		socketmode.OptionLog(log.New(os.Stdout, "socketmode: ", log.Lshortfile|log.LstdFlags)),
 	)
 
@@ -55,7 +55,6 @@ func main() {
 				fmt.Println("Connection failed. Retrying later...")
 			case socketmode.EventTypeConnected:
 				fmt.Println("Connected to Slack with Socket Mode.")
-				client.SendMessage("G014JE3QYMN", slack.MsgOptionText("hello", false))
 			case socketmode.EventTypeEventsAPI:
 				eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 				if !ok {
@@ -64,7 +63,7 @@ func main() {
 					continue
 				}
 
-				fmt.Printf("Event received: %+v\n", eventsAPIEvent)
+				fmt.Println("Received event")
 
 				client.Ack(*evt.Request)
 
@@ -91,7 +90,7 @@ func main() {
 					continue
 				}
 
-				fmt.Printf("Interaction received: %+v\n", callback)
+				fmt.Printf("Interaction received\n")
 
 				var payload interface{}
 
