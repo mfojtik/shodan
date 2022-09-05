@@ -16,6 +16,9 @@ processes = []
   allowed_public_ports = []
   auto_rollback = true
 
+[deploy]
+  strategy = "rolling"
+
 [[services]]
   internal_port = 8080
   processes = ["app"]
