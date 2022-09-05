@@ -93,7 +93,14 @@ func main() {
 					continue
 				}
 
-				log.Printf("[shodan][debug] received event: %s", spew.Sdump(eventsAPIEvent))
+				// we ignore some events for now (like links shared events)
+				switch slackevents.EventsAPIType(eventsAPIEvent.InnerEvent.Type) {
+				case slackevents.LinkShared:
+					continue
+				}
+				if enableDebugMode {
+					log.Printf("[shodan][debug] received event: %s", spew.Sdump(eventsAPIEvent))
+				}
 				client.Ack(*evt.Request)
 
 				switch eventsAPIEvent.Type {
