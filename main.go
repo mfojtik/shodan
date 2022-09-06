@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/mfojtik/shodan/pkg/config"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
@@ -10,60 +12,48 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"sync/atomic"
 	"syscall"
 )
 
-func main() {
-	appToken := os.Getenv("SLACK_APP_TOKEN")
-	if appToken == "" {
-		log.Fatalf("SLACK_APP_TOKEN must be set.")
-	}
+var cfg *config.Environment
 
-	if !strings.HasPrefix(appToken, "xapp-") {
-		log.Fatalf("SLACK_APP_TOKEN must have the prefix \"xapp-\".")
+func init() {
+	var err error
+	cfg, err = config.Read()
+	if err != nil {
+		panic(err)
 	}
+}
 
-	botToken := os.Getenv("SLACK_BOT_TOKEN")
-	if botToken == "" {
-		log.Fatalf("SLACK_BOT_TOKEN must be set.")
-	}
-
-	if !strings.HasPrefix(botToken, "xoxb-") {
-		log.Fatalf("SLACK_BOT_TOKEN must have the prefix \"xoxb-\".")
-	}
-
-	enableDebugMode := false
-	if debugMode := os.Getenv("DEBUG_MODE"); len(debugMode) > 0 {
-		enableDebugMode = true
-	}
-
-	// SIGINT handling
-	botContext, botShutdown := context.WithCancel(context.Background())
+func setupShutdownSignalHandling(shutdown context.CancelFunc) {
 	sigChannel := make(chan os.Signal, 1)
 	signal.Notify(sigChannel, os.Interrupt, syscall.SIGINT)
-	go func() {
-		select {
-		case <-sigChannel:
-			log.Println("Received SIGINT, shutting down ...")
-			botShutdown()
-		}
-	}()
+	signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
+	select {
+	case <-sigChannel:
+		log.Println("Received SIGINT, shutting down ...")
+		shutdown()
+	}
+}
 
+func main() {
 	api := slack.New(
-		botToken,
-		slack.OptionDebug(enableDebugMode),
+		cfg.Slack.BotToken,
+		slack.OptionDebug(cfg.Debug),
 		slack.OptionLog(log.New(os.Stdout, "api: ", log.Lshortfile|log.LstdFlags)),
-		slack.OptionAppLevelToken(appToken),
+		slack.OptionAppLevelToken(cfg.Slack.AppToken),
 	)
-
 	client := socketmode.New(
 		api,
-		socketmode.OptionDebug(enableDebugMode),
+		socketmode.OptionDebug(cfg.Debug),
 		socketmode.OptionLog(log.New(os.Stdout, "socketmode: ", log.Lshortfile|log.LstdFlags)),
 	)
 
+	botContext, shutdown := context.WithCancel(context.Background())
+	go setupShutdownSignalHandling(shutdown)
+
+	// these are set in slack handler, but read in /healthz endpoint
 	var (
 		slackEventHandlerReady  atomic.Value
 		slackEventHandlerBooted atomic.Value
@@ -72,24 +62,23 @@ func main() {
 	slackEventHandlerBooted.Store(false)
 
 	go func() {
-		client.Debugf("Starting Slack event handler ...")
+		client.Debugf("Waiting for slack events ...")
 		for evt := range client.Events {
 			switch evt.Type {
 			case socketmode.EventTypeConnecting:
 			case socketmode.EventTypeConnectionError:
 				// when the connection failed, turn the healthz to red
 				slackEventHandlerReady.Store(false)
-				log.Println("Connection failed. Retrying later...")
+				client.Debugf("Connection failed. Retrying later...")
 			case socketmode.EventTypeConnected:
 				// when we reconnect to slack, turn the healthz check back to ready
 				if booted := slackEventHandlerBooted.Load(); booted == true {
 					slackEventHandlerReady.Store(true)
 				}
-				log.Println("Connected to Slack with Socket Mode.")
+				client.Debugf("Connected to Slack with Socket Mode.")
 			case socketmode.EventTypeEventsAPI:
 				eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 				if !ok {
-					log.Printf("WARNING: Ignored event:\n %s\n", spew.Sdump(evt.Data))
 					continue
 				}
 
@@ -98,9 +87,7 @@ func main() {
 				case slackevents.LinkShared:
 					continue
 				}
-				if enableDebugMode {
-					log.Printf("[shodan][debug] received event: %s", spew.Sdump(eventsAPIEvent))
-				}
+				client.Debugf("[shodan][debug] received event: %s", spew.Sdump(eventsAPIEvent))
 				client.Ack(*evt.Request)
 
 				switch eventsAPIEvent.Type {
@@ -109,7 +96,7 @@ func main() {
 					switch ev := innerEvent.Data.(type) {
 					case *slackevents.AppMentionEvent:
 						log.Printf("[shodan][debug] received mention %s", ev.Channel)
-						_, _, err := api.PostMessage(ev.Channel, slack.MsgOptionText("Yes, hello.", false))
+						_, _, err := api.PostMessage(ev.Channel, slack.MsgOptionText(fmt.Sprintf("Yes, hello %s.", ev.User), false))
 						if err != nil {
 							log.Printf("Failed posting message: %v", err)
 						}
@@ -169,12 +156,15 @@ func main() {
 				slackEventHandlerBooted.Store(true)
 				slackEventHandlerReady.Store(true)
 			case socketmode.EventTypeIncomingError:
+				// this usually happens on shutdown, nothing to handle here.
 			default:
-				log.Printf("Unexpected event type received: %s\n", evt.Type)
+				client.Debugf("WARNING: received unhandled event type: %q", evt.Type)
 			}
 		}
 	}()
 
+	// run healthz endpoint.
+	// fly.io use this to measure the health of this app, if it fails, it restarts it.
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if ready := slackEventHandlerReady.Load(); ready == true {
 			log.Println("/healthz OK")
@@ -184,12 +174,10 @@ func main() {
 		log.Println("/healthz NOT_READY")
 		w.WriteHeader(http.StatusServiceUnavailable)
 	})
-
-	// /healthz probe
 	go http.ListenAndServe(":8080", nil)
 
-	// slack handler
+	// run the main slack handler
 	if err := client.RunContext(botContext); err != nil && err != context.Canceled {
-		log.Fatalf("Error running slack handler: %v", err)
+		log.Fatalf("error running slack handler: %v", err)
 	}
 }
