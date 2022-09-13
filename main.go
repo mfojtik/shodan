@@ -134,6 +134,7 @@ func main() {
 			case socketmode.EventTypeEventsAPI:
 				eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 				if !ok {
+					log.Printf("not eventsapievent")
 					continue
 				}
 
@@ -142,6 +143,7 @@ func main() {
 				case slackevents.LinkShared:
 					linkSharedEvent, ok := eventsAPIEvent.InnerEvent.Data.(*slackevents.LinkSharedEvent)
 					if !ok {
+						log.Printf("not linkshared event")
 						continue
 					}
 					if err := handleJiraLinks(jiraClient, api, linkSharedEvent); err != nil {
