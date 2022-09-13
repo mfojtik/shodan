@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	jira "github.com/andygrunwald/go-jira"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/mfojtik/shodan/pkg/config"
 	"github.com/slack-go/slack"
@@ -10,10 +11,13 @@ import (
 	"github.com/slack-go/slack/socketmode"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 )
 
 var cfg *config.Environment
@@ -37,6 +41,51 @@ func setupShutdownSignalHandling(shutdown context.CancelFunc) {
 	}
 }
 
+func handleJiraLinks(jiraClient *jira.Client, slackClient *slack.Client, ev *slackevents.LinkSharedEvent) error {
+	unfurls := map[string]slack.Attachment{}
+	for _, l := range ev.Links {
+		// example: https://issues.redhat.com/browse/API-1299
+		u, err := url.Parse(l.URL)
+		if err != nil {
+			log.Printf("failed to parse jira url %q: %v", l, u)
+		}
+
+		if u.Host != "issues.redhat.com" {
+			continue
+		}
+
+		comps := strings.Split(strings.TrimLeft(u.Path, "/"), "/")
+		if len(comps) != 2 || comps[1] != "browse" {
+			continue
+		}
+		id := comps[1]
+		if len(id) == 0 {
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancel()
+		issue, _, err := jiraClient.Issue.GetWithContext(ctx, id, nil)
+		if err != nil {
+			log.Printf("failed to get %s: %v", u.String(), err)
+			continue
+		}
+
+		text := fmt.Sprintf(":jira-dumpster-fire: <https://issues.redhat.com/browse/%s|#%s> %s – by %s", id, id, issue.Expand, "unknown")
+		log.Printf("Sending unfurl text: %s\n\n%s", text, spew.Sdump(issue))
+		unfurls[l.URL] = slack.Attachment{
+			Blocks: slack.Blocks{[]slack.Block{
+				slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", text, false, false), nil, nil),
+			}},
+		}
+	}
+	if len(unfurls) == 0 {
+		return nil
+	}
+	_, _, _, err := slackClient.UnfurlMessage(ev.Channel, ev.MessageTimeStamp, unfurls)
+	return err
+}
+
 func main() {
 	api := slack.New(
 		cfg.Slack.BotToken,
@@ -49,6 +98,12 @@ func main() {
 		socketmode.OptionDebug(cfg.Debug),
 		socketmode.OptionLog(log.New(os.Stdout, "socketmode: ", log.Lshortfile|log.LstdFlags)),
 	)
+
+	tp := jira.PATAuthTransport{Token: os.Getenv("JIRA_TOKEN")}
+	jiraClient, err := jira.NewClient(tp.Client(), "https://issues.redhat.com/")
+	if err != nil {
+		log.Fatalf("ERROR: jira client failed: %v", err)
+	}
 
 	botContext, shutdown := context.WithCancel(context.Background())
 	go setupShutdownSignalHandling(shutdown)
@@ -85,6 +140,13 @@ func main() {
 				// we ignore some events for now (like links shared events)
 				switch slackevents.EventsAPIType(eventsAPIEvent.InnerEvent.Type) {
 				case slackevents.LinkShared:
+					linkSharedEvent, ok := eventsAPIEvent.InnerEvent.Data.(*slackevents.LinkSharedEvent)
+					if !ok {
+						continue
+					}
+					if err := handleJiraLinks(jiraClient, api, linkSharedEvent); err != nil {
+						log.Printf("failed to unfurl link: %v", err)
+					}
 					continue
 				}
 				client.Debugf("[shodan][debug] received event: %s", spew.Sdump(eventsAPIEvent))
