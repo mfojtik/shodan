@@ -96,8 +96,11 @@ func main() {
 					switch ev := innerEvent.Data.(type) {
 					case *slackevents.AppMentionEvent:
 						log.Printf("[shodan][debug] received mention %s", ev.Channel)
-						_, _, err := api.PostMessage(ev.Channel, slack.MsgOptionText(fmt.Sprintf("Yes, hello %s.", ev.User), false))
+						user, err := client.GetUserInfo(ev.User)
 						if err != nil {
+							log.Printf("Failed to get user %q info: %v", ev.User, err)
+						}
+						if _, _, err := api.PostMessage(ev.Channel, slack.MsgOptionText(fmt.Sprintf("Yes, hello @%s.", user.Profile.DisplayName), false)); err != nil {
 							log.Printf("Failed posting message: %v", err)
 						}
 					}
