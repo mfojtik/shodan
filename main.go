@@ -51,15 +51,18 @@ func handleJiraLinks(jiraClient *jira.Client, slackClient *slack.Client, ev *sla
 		}
 
 		if u.Host != "issues.redhat.com" {
+			log.Printf("not issues.redhat.com")
 			continue
 		}
 
 		comps := strings.Split(strings.TrimLeft(u.Path, "/"), "/")
-		if len(comps) != 2 || comps[1] != "browse" {
+		if len(comps) != 2 || comps[0] != "browse" {
+			log.Printf("not browse (%#v)", comps)
 			continue
 		}
 		id := comps[1]
 		if len(id) == 0 {
+			log.Printf("not ID")
 			continue
 		}
 
@@ -71,8 +74,17 @@ func handleJiraLinks(jiraClient *jira.Client, slackClient *slack.Client, ev *sla
 			continue
 		}
 
-		text := fmt.Sprintf(":jira-dumpster-fire: <https://issues.redhat.com/browse/%s|#%s> %s – by %s", id, id, issue.Expand, "unknown")
-		log.Printf("Sending unfurl text: %s\n\n%s", text, spew.Sdump(issue))
+		emoji := ""
+		switch issue.Fields.Type.Name {
+		case "Bug":
+			emoji = ":bugzilla:"
+		case "Epic":
+			emoji = ":epic-win:"
+		default:
+			emoji = ":jira-dumpster-fire:"
+		}
+
+		text := fmt.Sprintf("%s <https://issues.redhat.com/browse/%s|#%s> %s – by %s", emoji, id, id, issue.Fields.Summary, issue.Fields.Reporter.Name)
 		unfurls[l.URL] = slack.Attachment{
 			Blocks: slack.Blocks{[]slack.Block{
 				slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", text, false, false), nil, nil),
@@ -138,6 +150,9 @@ func main() {
 					continue
 				}
 
+				client.Debugf("[shodan][debug] received event: %s", spew.Sdump(eventsAPIEvent))
+				client.Ack(*evt.Request)
+
 				// we ignore some events for now (like links shared events)
 				switch slackevents.EventsAPIType(eventsAPIEvent.InnerEvent.Type) {
 				case slackevents.LinkShared:
@@ -146,13 +161,11 @@ func main() {
 						log.Printf("not linkshared event")
 						continue
 					}
+
 					if err := handleJiraLinks(jiraClient, api, linkSharedEvent); err != nil {
 						log.Printf("failed to unfurl link: %v", err)
 					}
-					continue
 				}
-				client.Debugf("[shodan][debug] received event: %s", spew.Sdump(eventsAPIEvent))
-				client.Ack(*evt.Request)
 
 				switch eventsAPIEvent.Type {
 				case slackevents.CallbackEvent:
