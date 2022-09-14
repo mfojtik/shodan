@@ -51,18 +51,15 @@ func handleJiraLinks(jiraClient *jira.Client, slackClient *slack.Client, ev *sla
 		}
 
 		if u.Host != "issues.redhat.com" {
-			log.Printf("not issues.redhat.com")
 			continue
 		}
 
 		comps := strings.Split(strings.TrimLeft(u.Path, "/"), "/")
 		if len(comps) != 2 || comps[0] != "browse" {
-			log.Printf("not browse (%#v)", comps)
 			continue
 		}
 		id := comps[1]
 		if len(id) == 0 {
-			log.Printf("not ID")
 			continue
 		}
 
